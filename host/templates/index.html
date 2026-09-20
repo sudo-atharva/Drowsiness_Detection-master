@@ -1,0 +1,96 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Drowsiness / Vehicle Dashboard</title>
+  <style>
+    body { font-family: sans-serif; background: #111; color: #eee; margin: 0; padding: 1rem; }
+    .grid { display: flex; flex-wrap: wrap; gap: 1rem; }
+    .card { background: #1c1c1c; border-radius: 8px; padding: 1rem; min-width: 220px; }
+    img#feed { max-width: 480px; border-radius: 8px; display: block; }
+    .ok { color: #4caf50; } .bad { color: #f44336; } .warn { color: #ff9800; }
+    table { border-collapse: collapse; width: 100%; }
+    td, th { padding: 2px 6px; text-align: left; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <h2>Drowsiness / Vehicle Dashboard</h2>
+  <div class="grid">
+    <div class="card">
+      <img id="feed" src="/video_feed">
+      <p>Driver state: <span id="drowsy-state">--</span></p>
+    </div>
+
+    <div class="card">
+      <h3>MPU6050 (vehicle)</h3>
+      <p>Vehicle link: <span id="link-state">--</span></p>
+      <table id="mpu-table"></table>
+    </div>
+
+    <div class="card">
+      <h3>GPS</h3>
+      <p id="gps-text">--</p>
+      <a id="gps-link" href="#" target="_blank" style="display:none">View on map</a>
+    </div>
+
+    <div class="card">
+      <h3>GSM</h3>
+      <p>Signal (0-31): <span id="gsm-signal">--</span></p>
+    </div>
+
+    <div class="card" style="min-width: 320px;">
+      <h3>Accident log</h3>
+      <table id="log-table"><thead><tr><th>Time</th><th>Severity</th><th>g</th><th>Location</th></tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+
+  <script>
+    async function refresh() {
+      let r;
+      try {
+        r = await fetch('/api/status');
+      } catch (e) {
+        return; // network hiccup, try again next tick
+      }
+      const s = await r.json();
+
+      const drowsyEl = document.getElementById('drowsy-state');
+      drowsyEl.textContent = s.drowsy ? 'DROWSY' : 'awake';
+      drowsyEl.className = s.drowsy ? 'bad' : 'ok';
+
+      const linkEl = document.getElementById('link-state');
+      linkEl.textContent = s.vehicle_link_ok ? 'connected' : 'lost';
+      linkEl.className = s.vehicle_link_ok ? 'ok' : 'bad';
+
+      const mpuTable = document.getElementById('mpu-table');
+      mpuTable.innerHTML = s.mpu
+        ? Object.entries(s.mpu).map(([k, v]) => `<tr><td>${k}</td><td>${v.toFixed(3)}</td></tr>`).join('')
+        : '<tr><td>no data</td></tr>';
+
+      const gpsText = document.getElementById('gps-text');
+      const gpsLink = document.getElementById('gps-link');
+      if (s.gps) {
+        gpsText.textContent = `${s.gps.lat.toFixed(5)}, ${s.gps.lon.toFixed(5)} (${s.gps.satellites} sats)`;
+        gpsLink.href = `https://www.openstreetmap.org/?mlat=${s.gps.lat}&mlon=${s.gps.lon}`;
+        gpsLink.style.display = 'inline';
+      } else {
+        gpsText.textContent = 'no fix';
+        gpsLink.style.display = 'none';
+      }
+
+      document.getElementById('gsm-signal').textContent = s.gsm_signal ?? '--';
+
+      const logBody = document.querySelector('#log-table tbody');
+      logBody.innerHTML = s.accident_log.map(e => `
+        <tr>
+          <td>${new Date(e.time * 1000).toLocaleTimeString()}</td>
+          <td class="warn">${e.severity}</td>
+          <td>${e.magnitude}</td>
+          <td>${e.lat ? `<a href="https://www.openstreetmap.org/?mlat=${e.lat}&mlon=${e.lon}" target="_blank">map</a>` : '--'}</td>
+        </tr>`).join('');
+    }
+    setInterval(refresh, 1000);
+    refresh();
+  </script>
+</body>
+</html>
