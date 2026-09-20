@@ -13,20 +13,12 @@ fi
 
 echo "== System packages (opencv via apt - much faster than pip on a Pi) =="
 apt-get update
-apt-get install -y python3-venv python3-pip python3-opencv \
-  build-essential cmake libopenblas-dev liblapack-dev libjpeg-dev libpng-dev
-
-echo "== Freeing up RAM headroom for dlib's build (1GB boards will OOM without this) =="
-if [ -f /etc/dphys-swapfile ]; then
-  sed -i 's/^CONF_SWAPSIZE=.*/CONF_SWAPSIZE=1024/' /etc/dphys-swapfile
-  dphys-swapfile setup
-  dphys-swapfile swapon
-fi
+apt-get install -y python3-venv python3-pip python3-opencv
 
 echo "== Python venv (system-site-packages so it sees apt's opencv) =="
 sudo -u "${SUDO_USER:-$USER}" python3 -m venv --system-site-packages "$REPO_DIR/venv"
 "$REPO_DIR/venv/bin/pip" install --upgrade pip
-"$REPO_DIR/venv/bin/pip" install flask pyserial imutils dlib scipy
+"$REPO_DIR/venv/bin/pip" install flask pyserial
 
 echo "== Enabling GPIO UART for the GPS module (frees /dev/serial0 from the login console) =="
 raspi-config nonint do_serial_cons 1 || true

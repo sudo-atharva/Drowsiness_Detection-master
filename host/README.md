@@ -7,7 +7,7 @@ GPS location, GSM alert status. Talks to the Controller ESP32 over USB
 ## Files
 
 - `app.py` — Flask routes, wires everything together
-- `drowsiness.py` — webcam capture + EAR drowsiness detection (from the original `Drowsiness_Detection.py`), background thread
+- `drowsiness.py` — webcam capture + Haar-cascade eye detection, background thread
 - `controller_link.py` — USB serial to Controller ESP32: sends DROWSY/AWAKE, parses MPU + LINK lines
 - `gps_reader.py` — NEO-6M GPS over Pi GPIO UART, parses `$GPGGA`
 - `gsm_alert.py` — SIM800L-style GSM: signal check + SMS alert on crash
@@ -57,18 +57,17 @@ adjusting `MINOR_G`/`MODERATE_G`/`SEVERE_G`.
 
 ## 1GB RAM Pi — what to watch
 
-- `dlib`'s 68-point landmark model is the heaviest piece here. It runs, but
-  expect single-digit FPS on a Pi Zero 2 W / Pi 3. If that's too slow,
-  swap `drowsiness.py`'s detector for a lighter one (e.g. MediaPipe Face
-  Mesh, or OpenCV's Haar cascade + a smaller landmark model) — not done here
-  since the original project's algorithm was kept as-is; only the capture
-  loop was restructured for streaming.
+- Drowsiness detection uses OpenCV's Haar cascades (`haarcascade_frontalface_default.xml`
+  + `haarcascade_eye.xml`), not dlib's 68-point landmark model. dlib has no
+  prebuilt ARM wheel and its source build routinely takes hours (or OOMs) on
+  a 1GB board — not worth it here. Cascades ship inside `python3-opencv`
+  itself, so this needs no extra install. Trade-off: eyes-detected-or-not is
+  a cruder signal than a continuous eye-aspect-ratio, so it's more prone to
+  false positives (e.g. looking down, glasses). Revisit with MediaPipe Face
+  Mesh if that ever ships a wheel for the Pi's Python version, or accept the
+  cascade approach and tune `EYES_CLOSED_FRAME_CHECK` in `drowsiness.py`.
 - Video is capped at 15 FPS in `drowsiness.mjpeg_generator` — raise it only
   if the Pi has headroom.
-- `dlib` doesn't have prebuilt wheels for all Pi architectures; installing
-  it can take a long time compiling from source on a Pi. Consider
-  [piwheels](https://www.piwheels.org/) (Raspberry Pi OS uses it by default)
-  or building once and reusing the wheel.
 
 ## Hosting over Tailscale (like OctoPrint)
 

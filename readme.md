@@ -12,7 +12,7 @@ alert) reachable remotely over Tailscale.
                         |
                         v
    [Host: Raspberry Pi or PC, 1GB RAM+]
-   - drowsiness detection (dlib EAR)
+   - drowsiness detection (OpenCV Haar cascades)
    - Flask dashboard --------------------- Tailscale ---> your phone/laptop
    - GPS (GPIO UART) + GSM (serial) modules
         |  USB serial (buttons + DROWSY/AWAKE + MPU relay)
@@ -40,8 +40,8 @@ alert) reachable remotely over Tailscale.
 | `firmware/README.md` | Wiring, MAC pairing, wire protocol |
 | `host/` | Flask dashboard: webcam stream, drowsiness detection, GPS/GSM, crash log |
 | `host/README.md` | Serial port config, GSM alert setup, Tailscale hosting |
-| `models/` | dlib 68-point face landmark model used by drowsiness detection |
-| `Drowsiness_Detection.py` | Original standalone script (webcam window, no hardware/website) — kept as-is; `host/drowsiness.py` is the version wired into the dashboard |
+| `Drowsiness_Detection.py` | Original standalone dlib-based script (webcam window, no hardware/website) — kept as reference; `host/drowsiness.py` is the dashboard version and uses OpenCV Haar cascades instead (dlib doesn't build cleanly on a 1GB Pi) |
+| `models/` | dlib landmark model — only used by the original standalone script above, not by the dashboard |
 | `install_windows.bat` / `install_linux.sh` | One-shot setup per platform |
 
 ## Hardware needed
@@ -88,8 +88,9 @@ Full pin-out and protocol details: [`firmware/README.md`](firmware/README.md).
 
 - Crash-severity thresholds (`host/crash.py`) are placeholders — calibrate
   against your actual vehicle.
-- `dlib`'s landmark model is the heaviest part of the pipeline; a 1GB Pi
-  will run it but not fast. Swap it out if FPS is too low.
+- Dashboard's eye detection (Haar cascades) is cruder than a true EAR
+  calculation — more prone to false positives than dlib's landmark
+  approach, traded away because dlib won't build on a 1GB Pi.
 - No auth on the dashboard — anyone on your tailnet can view it.
 - Accident log is in-memory only (lost on restart).
 

@@ -15,13 +15,6 @@ call venv\Scripts\activate.bat
 
 python -m pip install --upgrade pip
 python -m pip install -r host\requirements.txt
-if errorlevel 1 (
-    echo.
-    echo Normal dlib install failed - common on Windows without build tools.
-    echo Retrying with a prebuilt dlib wheel instead...
-    python -m pip install dlib-binary
-    python -m pip install flask pyserial opencv-python imutils scipy
-)
 
 echo.
 echo Done. Before running:
