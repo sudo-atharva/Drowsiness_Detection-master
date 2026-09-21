@@ -33,15 +33,39 @@ uint8_t vehicleMac[6] = {0x58, 0x2A, 0xBD, 0xD2, 0xC0, 0x3C}; // Vehicle ESP32
 #define BTN_BACKWARD 33
 #define BTN_LEFT     25
 #define BTN_RIGHT    26
+#define STATUS_LED   4  // solid = linked+awake, 3s blink = drowsy, 1s blink = link lost
 
 const unsigned long SEND_INTERVAL_MS = 100;   // 10 Hz control + heartbeat
 const unsigned long LINK_TIMEOUT_MS  = 2000;
+const unsigned long DROWSY_BLINK_MS  = 3000;
+const unsigned long LOST_BLINK_MS    = 1000;
 
 ControlPacket outPacket = {0, 0, 0, 0, 0};
 unsigned long lastSend = 0;
 unsigned long lastTelemetryRx = 0;
+unsigned long lastLedToggle = 0;
+bool ledState = false;
 bool linkWasOk = false;
 String serialLine;
+
+void updateLed(bool linkOk, bool drowsy) {
+  unsigned long now = millis();
+  if (!linkOk) {
+    if (now - lastLedToggle >= LOST_BLINK_MS) {
+      lastLedToggle = now;
+      ledState = !ledState;
+      digitalWrite(STATUS_LED, ledState);
+    }
+  } else if (drowsy) {
+    if (now - lastLedToggle >= DROWSY_BLINK_MS) {
+      lastLedToggle = now;
+      ledState = !ledState;
+      digitalWrite(STATUS_LED, ledState);
+    }
+  } else {
+    digitalWrite(STATUS_LED, HIGH);
+  }
+}
 
 void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
   if (len != sizeof(TelemetryPacket)) return;
