@@ -1,0 +1,93 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Drive Dashboard</title>
+  <style>
+    body { font-family: sans-serif; background: #111; color: #eee; margin: 0; padding: 1rem; text-align: center; }
+    .ok { color: #4caf50; } .bad { color: #f44336; }
+    .pad { display: grid; grid-template-columns: repeat(3, 80px); grid-gap: 8px; justify-content: center; margin: 2rem auto; }
+    .pad button { font-size: 1.5rem; padding: 1rem 0; border-radius: 8px; border: none; background: #333; color: #eee; }
+    .pad button:active, .pad button.active { background: #4caf50; }
+    #fwd { grid-column: 2; } #left { grid-column: 1; grid-row: 2; }
+    #stop { grid-column: 2; grid-row: 2; } #right { grid-column: 3; grid-row: 2; }
+    #back { grid-column: 2; grid-row: 3; }
+  </style>
+</head>
+<body>
+  <h2>Drive Dashboard</h2>
+  <p>Vehicle link: <span id="link-state">--</span></p>
+  <p style="font-size: 0.85rem; color: #999;">Arrow keys or buttons. Releasing stops. Physical buttons on the controller always override this.</p>
+
+  <div class="pad">
+    <button id="fwd" data-dir="forward">&uarr;</button>
+    <button id="left" data-dir="left">&larr;</button>
+    <button id="stop" data-dir="stop">&#9632;</button>
+    <button id="right" data-dir="right">&rarr;</button>
+    <button id="back" data-dir="backward">&darr;</button>
+  </div>
+
+  <script>
+    const KEY_DIR = { ArrowUp: 'forward', ArrowDown: 'backward', ArrowLeft: 'left', ArrowRight: 'right' };
+    let current = null;
+    let repeatTimer = null;
+
+    function send(dir) {
+      fetch(`/api/drive/${dir}`, { method: 'POST' }).catch(() => {});
+    }
+
+    function setActive(el) {
+      document.querySelectorAll('.pad button').forEach(b => b.classList.remove('active'));
+      if (el) el.classList.add('active');
+    }
+
+    function start(dir, el) {
+      if (current === dir) return;
+      current = dir;
+      setActive(el);
+      send(dir);
+      clearInterval(repeatTimer);
+      // firmware auto-stops a web command after 500ms of silence, so keep refreshing it
+      repeatTimer = setInterval(() => send(dir), 200);
+    }
+
+    function stop() {
+      if (current === null) return;
+      current = null;
+      setActive(null);
+      clearInterval(repeatTimer);
+      send('stop');
+    }
+
+    document.querySelectorAll('.pad button').forEach(btn => {
+      const dir = btn.dataset.dir;
+      btn.addEventListener('mousedown', () => dir === 'stop' ? (stop(), send('stop')) : start(dir, btn));
+      btn.addEventListener('mouseup', stop);
+      btn.addEventListener('mouseleave', stop);
+      btn.addEventListener('touchstart', e => { e.preventDefault(); dir === 'stop' ? (stop(), send('stop')) : start(dir, btn); });
+      btn.addEventListener('touchend', e => { e.preventDefault(); stop(); });
+    });
+
+    window.addEventListener('keydown', e => {
+      const dir = KEY_DIR[e.key];
+      if (!dir || e.repeat) return;
+      start(dir, document.getElementById({ forward: 'fwd', backward: 'back', left: 'left', right: 'right' }[dir]));
+    });
+    window.addEventListener('keyup', e => {
+      if (KEY_DIR[e.key]) stop();
+    });
+
+    async function refreshStatus() {
+      try {
+        const r = await fetch('/api/status');
+        const s = await r.json();
+        const el = document.getElementById('link-state');
+        el.textContent = s.vehicle_link_ok ? 'connected' : 'lost';
+        el.className = s.vehicle_link_ok ? 'ok' : 'bad';
+      } catch (e) { /* network hiccup, try again next tick */ }
+    }
+    setInterval(refreshStatus, 1000);
+    refreshStatus();
+  </script>
+</body>
+</html>

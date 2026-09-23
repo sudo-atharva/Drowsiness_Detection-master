@@ -1,30 +1,45 @@
 # Host dashboard (Raspberry Pi / PC)
 
-Flask app: live webcam feed + drowsiness alert, MPU6050 crash severity, GPS
-location, GSM alert status — view/monitor only, no driving from the
-dashboard. Driving is buttons-only on the Controller ESP32 itself. Talks to
-the Controller ESP32 over USB serial — the Controller relays everything
-onward to the Vehicle ESP32 over ESP-NOW, so this host code never talks to
-the vehicle directly (see [`../firmware/README.md`](../firmware/README.md)).
+Two separate Flask apps, run one at a time (both want the Controller's one
+USB-serial port):
+
+- `app.py` — live webcam feed + drowsiness alert, MPU6050 crash severity,
+  GPS location, GSM alert status. View/monitor only, no driving from it.
+- `drive_dashboard.py` — drives the car from the browser (arrow keys or
+  on-screen buttons), sending FWD/BACK/LEFT/RIGHT/STOP over the same link.
+  Physical buttons on the Controller ESP32 itself always override it.
+
+Both talk to the Controller ESP32 over USB serial — the Controller relays
+everything onward to the Vehicle ESP32 over ESP-NOW, so this host code never
+talks to the vehicle directly (see
+[`../firmware/README.md`](../firmware/README.md)).
 
 ## Files
 
-- `app.py` — Flask routes, wires everything together
+- `app.py` — Flask routes for the monitoring dashboard
+- `drive_dashboard.py` — Flask routes for the drive dashboard
 - `drowsiness.py` — webcam capture + Haar-cascade eye detection, background thread
-- `controller_link.py` — USB serial to the Controller ESP32 (auto-detects the port): sends drowsy state, parses MPU + LINK lines it relays back
+- `controller_link.py` — USB serial to the Controller ESP32 (auto-detects the port): sends drowsy state and drive commands, parses MPU + LINK lines it relays back
 - `gps_reader.py` — NEO-6M GPS over Pi GPIO UART, parses `$GPGGA`
 - `gsm_alert.py` — SIM800L-style GSM: signal check + SMS alert on crash
 - `crash.py` — accel-magnitude crash severity + alert cooldown
-- `templates/index.html` — dashboard page (vanilla JS polling, no build step)
+- `templates/index.html` — monitoring dashboard page (vanilla JS polling, no build step)
+- `templates/drive.html` — drive dashboard page (arrow keys / on-screen buttons)
 
 ## Run
 
+Monitoring dashboard:
 ```
 pip install -r requirements.txt
 python app.py
 ```
-
 Open `http://<host>:5000/`.
+
+Drive dashboard (instead of, not alongside, `app.py`):
+```
+python drive_dashboard.py
+```
+Open `http://<host>:5001/`.
 
 ## Connection settings
 

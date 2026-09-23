@@ -1,12 +1,17 @@
 // Controller ESP32 — USB<->ESP-NOW bridge, plus its own 4 physical buttons.
-// - Drives the Vehicle ESP32 over ESP-NOW from its 4 physical buttons only —
-//   no website/WiFi control path, driving is buttons-only by design.
+// - Drives the Vehicle ESP32 over ESP-NOW from its 4 physical buttons, OR
+//   from FWD/BACK/LEFT/RIGHT/STOP commands sent over USB (e.g. a web
+//   dashboard). Physical buttons always win: pressing one immediately
+//   cancels whatever the last web command was.
+// - A web drive command auto-stops if not refreshed within WEB_CMD_TIMEOUT_MS,
+//   so a dropped web page/network doesn't leave the vehicle driving blind.
 // - Relays the host's DROWSY/AWAKE state onward to the vehicle over ESP-NOW.
 // - Relays MPU6050 telemetry (received from the vehicle over ESP-NOW) to the host over USB.
 // - Status LED (D4): solid = linked to vehicle, blink (1s) = link lost
 //
 // Host serial protocol (115200 baud, line-based):
 //   host -> controller : "DROWSY\n" | "AWAKE\n"
+//                         "FWD\n" | "BACK\n" | "LEFT\n" | "RIGHT\n" | "STOP\n"
 //   controller -> host : "MPU,ax,ay,az,gx,gy,gz\n"   (forwarded from vehicle)
 //                        "LINK,OK\n" | "LINK,LOST\n" (vehicle connection status)
 
@@ -40,6 +45,7 @@ uint8_t vehicleMac[6] = {0x68, 0x09, 0x47, 0x87, 0xA4, 0x68}; // Vehicle ESP32
 const unsigned long SEND_INTERVAL_MS = 100;   // 10 Hz control + heartbeat
 const unsigned long LINK_TIMEOUT_MS  = 2000;
 const unsigned long LOST_BLINK_MS    = 1000;
+const unsigned long WEB_CMD_TIMEOUT_MS = 500; // stale web drive command auto-stops
 
 ControlPacket outPacket = {0, 0, 0, 0, 0};
 unsigned long lastSend = 0;
@@ -49,6 +55,9 @@ bool ledState = false;
 bool linkWasOk = false;
 String serialLine;
 bool prevF = false, prevB = false, prevL = false, prevR = false;
+
+bool webF = false, webB = false, webL = false, webR = false;
+unsigned long lastWebCmd = 0;
 
 void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
   if (len != sizeof(TelemetryPacket)) return;
@@ -110,6 +119,11 @@ void pollHostSerial() {
       serialLine.trim();
       if (serialLine == "DROWSY") outPacket.drowsy = 1;
       else if (serialLine == "AWAKE") outPacket.drowsy = 0;
+      else if (serialLine == "FWD")   { webF = true;  webB = false; webL = false; webR = false; lastWebCmd = millis(); }
+      else if (serialLine == "BACK")  { webF = false; webB = true;  webL = false; webR = false; lastWebCmd = millis(); }
+      else if (serialLine == "LEFT")  { webF = false; webB = false; webL = true;  webR = false; lastWebCmd = millis(); }
+      else if (serialLine == "RIGHT") { webF = false; webB = false; webL = false; webR = true;  lastWebCmd = millis(); }
+      else if (serialLine == "STOP")  { webF = false; webB = false; webL = false; webR = false; lastWebCmd = millis(); }
       serialLine = "";
     } else if (c != '\r') {
       serialLine += c;
@@ -133,7 +147,15 @@ void loop() {
   if (r && !prevR) Serial.println("BTN,right");
   prevF = f; prevB = b; prevL = l; prevR = r;
 
-  outPacket.forward = f; outPacket.backward = b; outPacket.left = l; outPacket.right = r;
+  if (f || b || l || r) {
+    // a physical button press always overrides and cancels any web command
+    outPacket.forward = f; outPacket.backward = b; outPacket.left = l; outPacket.right = r;
+    webF = webB = webL = webR = false;
+  } else if (millis() - lastWebCmd < WEB_CMD_TIMEOUT_MS) {
+    outPacket.forward = webF; outPacket.backward = webB; outPacket.left = webL; outPacket.right = webR;
+  } else {
+    outPacket.forward = 0; outPacket.backward = 0; outPacket.left = 0; outPacket.right = 0;
+  }
 
   unsigned long now = millis();
   if (now - lastSend >= SEND_INTERVAL_MS) {

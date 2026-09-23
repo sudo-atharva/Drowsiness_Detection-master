@@ -14,9 +14,11 @@ bridge to the host — the Vehicle has no WiFi/network of its own at all.
 ```
 
 - **Controller ESP32** sits at the host end, wired to the host over USB. It
-  reads its own 4 buttons and drives the vehicle from them directly — no
-  website/WiFi control path at all. It relays the host's drowsy/awake state
-  onward, and relays MPU6050 telemetry (received from the vehicle over
+  reads its own 4 buttons and drives the vehicle from them directly, and can
+  also be driven by FWD/BACK/LEFT/RIGHT/STOP commands sent over USB (see
+  `host/drive_dashboard.py`) — a physical button press always overrides and
+  cancels whatever the web command was. It relays the host's drowsy/awake
+  state onward, and relays MPU6050 telemetry (received from the vehicle over
   ESP-NOW) back to the host over the same USB line.
 - **Vehicle ESP32** sits on the car. No WiFi, no router dependency — pure
   ESP-NOW. It owns the MPU6050, drives the 2 motors, and enforces the
@@ -76,8 +78,13 @@ channel automatically — no channel to configure or match.
 ## Wire protocol
 
 **Host <-> Controller (USB serial, 115200, line-based):**
-- Host -> Controller: `DROWSY\n` / `AWAKE\n`
+- Host -> Controller: `DROWSY\n` / `AWAKE\n`, `FWD\n` / `BACK\n` / `LEFT\n` / `RIGHT\n` / `STOP\n`
 - Controller -> Host: `MPU,ax,ay,az,gx,gy,gz\n`, `LINK,OK\n` / `LINK,LOST\n`
+
+A web drive command is only held for `WEB_CMD_TIMEOUT_MS` (500ms) before the
+Controller auto-stops it — the dashboard re-sends the current direction
+every 200ms while a key/button is held, so a dropped page or network stops
+the vehicle instead of leaving it driving blind.
 
 **Controller <-> Vehicle (ESP-NOW, raw structs):**
 - Controller -> Vehicle: `ControlPacket { forward, backward, left, right, drowsy }`, sent at 10 Hz (also acts as the heartbeat the vehicle uses for link-loss detection).
@@ -112,7 +119,8 @@ is monitoring anyway.
 
 ## The rest of the system
 
-Host-side dashboard (drowsiness detection, GPS/GSM, Tailscale hosting; it's
-view/monitor only, no driving from it) lives in
+Host-side dashboard (drowsiness detection, GPS/GSM, Tailscale hosting;
+view/monitor only, no driving from it — `host/app.py`) and the separate
+web-drive dashboard (`host/drive_dashboard.py`) live in
 [`../host/`](../host/README.md). Top-level overview:
 [`../readme.md`](../readme.md).

@@ -1,8 +1,9 @@
 """USB-serial link to the Controller ESP32.
 
 Sends DROWSY/AWAKE, parses the MPU + LINK lines the Controller relays back
-from the Vehicle ESP32 over ESP-NOW. Driving is buttons-only on the
-Controller itself — this link carries no drive commands.
+from the Vehicle ESP32 over ESP-NOW. Also sends FWD/BACK/LEFT/RIGHT/STOP
+drive commands (see drive()) — the Controller's own physical buttons still
+override these if pressed.
 See firmware/README.md for the wire protocol.
 """
 import threading
@@ -49,6 +50,15 @@ class ControllerLink:
             return
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
+
+    DRIVE_COMMANDS = {"forward", "backward", "left", "right", "stop"}
+    _DRIVE_WIRE = {"forward": b"FWD\n", "backward": b"BACK\n", "left": b"LEFT\n", "right": b"RIGHT\n", "stop": b"STOP\n"}
+
+    def drive(self, direction: str):
+        if direction not in self.DRIVE_COMMANDS:
+            raise ValueError(f"unknown drive direction: {direction}")
+        if self._ser:
+            self._ser.write(self._DRIVE_WIRE[direction])
 
     def set_drowsy(self, drowsy: bool):
         if drowsy == self._drowsy:
