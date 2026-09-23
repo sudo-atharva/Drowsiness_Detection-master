@@ -10,6 +10,7 @@ noisier than distance-based EAR. Revisit if false-positive rate is an issue
 (e.g. mediapipe, once it has wheels for the Pi's Python version).
 """
 import os
+import sys
 import threading
 import time
 
@@ -41,7 +42,9 @@ class DrowsinessDetector:
         self._face_cascade = cv2.CascadeClassifier(_cascade_path("haarcascade_frontalface_default.xml"))
         self._eye_cascade = cv2.CascadeClassifier(_cascade_path("haarcascade_eye.xml"))
 
-        self._cap = cv2.VideoCapture(camera_index)
+        # MSMF (default backend) hands back blank frames on some Windows webcams; DSHOW doesn't.
+        backend = cv2.CAP_DSHOW if sys.platform.startswith("win") else cv2.CAP_ANY
+        self._cap = cv2.VideoCapture(camera_index, backend)
         self._closed_frames = 0
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()

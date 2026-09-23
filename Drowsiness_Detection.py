@@ -18,7 +18,7 @@ predict = dlib.shape_predictor("models/shape_predictor_68_face_landmarks.dat")# 
 
 (lStart, lEnd) = face_utils.FACIAL_LANDMARKS_68_IDXS["left_eye"]
 (rStart, rEnd) = face_utils.FACIAL_LANDMARKS_68_IDXS["right_eye"]
-cap=cv2.VideoCapture(0)
+cap=cv2.VideoCapture(0, cv2.CAP_DSHOW)
 flag=0
 while True:
 	ret, frame=cap.read()

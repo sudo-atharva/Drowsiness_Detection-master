@@ -43,7 +43,12 @@ class GPSReader:
     def __init__(self, port=GPS_SERIAL_PORT, baud=GPS_BAUD):
         self._lock = threading.Lock()
         self.latest = None
-        self._ser = serial.Serial(port, baud, timeout=1)
+        try:
+            self._ser = serial.Serial(port, baud, timeout=1)
+        except serial.SerialException:
+            print(f"GPS: no serial port at {port}, GPS disabled")
+            self._ser = None
+            return
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 

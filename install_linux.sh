@@ -24,6 +24,11 @@ echo "== Enabling GPIO UART for the GPS module (frees /dev/serial0 from the logi
 raspi-config nonint do_serial_cons 1 || true
 raspi-config nonint do_serial_hw 0 || true
 
+echo "== Moving Bluetooth off the good UART (GPIO14/15 get the PL011, not the clock-drifty mini-UART) =="
+CONFIG_TXT="/boot/firmware/config.txt"
+[ -f "$CONFIG_TXT" ] || CONFIG_TXT="/boot/config.txt"
+grep -q "^dtoverlay=disable-bt" "$CONFIG_TXT" || echo "dtoverlay=disable-bt" >> "$CONFIG_TXT"
+
 echo "== Tailscale (for remote access, same pattern as OctoPrint) =="
 if ! command -v tailscale >/dev/null; then
   curl -fsSL https://tailscale.com/install.sh | sh
@@ -51,8 +56,8 @@ systemctl enable drowsiness-dashboard.service
 cat <<EOF
 
 Done. Before it'll actually work:
-  1. Edit serial ports in host/controller_link.py, host/gps_reader.py, host/gsm_alert.py
-     to match your wiring (see host/README.md).
+  1. Set serial ports in host/controller_link.py, host/gps_reader.py,
+     host/gsm_alert.py to match your wiring (see host/README.md).
   2. Set ALERT_PHONE_NUMBER in host/gsm_alert.py.
   3. sudo tailscale up   (one-time auth)
   4. sudo reboot         (applies the UART change + starts the dashboard service)

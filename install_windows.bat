@@ -18,7 +18,7 @@ python -m pip install -r host\requirements.txt
 
 echo.
 echo Done. Before running:
-echo   1. Edit COM port in host\controller_link.py (CONTROLLER_SERIAL_PORT)
+echo   1. Edit CONTROLLER_SERIAL_PORT (COM port) in host\controller_link.py
 echo   2. venv\Scripts\python host\app.py
 echo   3. Open http://localhost:5000
 endlocal

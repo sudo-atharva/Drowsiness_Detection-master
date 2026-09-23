@@ -1,18 +1,20 @@
 # Host dashboard (Raspberry Pi / PC)
 
-Flask app: live webcam feed + drowsiness alert, MPU6050 crash severity,
-GPS location, GSM alert status. Talks to the Controller ESP32 over USB
-(see [`../firmware/README.md`](../firmware/README.md)).
+Flask app: live webcam feed + drowsiness alert, on-page drive controls,
+MPU6050 crash severity, GPS location, GSM alert status. Talks to the
+Controller ESP32 over USB serial — the Controller relays everything onward
+to the Vehicle ESP32 over ESP-NOW, so this host code never talks to the
+vehicle directly (see [`../firmware/README.md`](../firmware/README.md)).
 
 ## Files
 
 - `app.py` — Flask routes, wires everything together
 - `drowsiness.py` — webcam capture + Haar-cascade eye detection, background thread
-- `controller_link.py` — USB serial to Controller ESP32: sends DROWSY/AWAKE, parses MPU + LINK lines
+- `controller_link.py` — USB serial to the Controller ESP32: sends drive commands + drowsy state, parses MPU + LINK lines it relays back
 - `gps_reader.py` — NEO-6M GPS over Pi GPIO UART, parses `$GPGGA`
 - `gsm_alert.py` — SIM800L-style GSM: signal check + SMS alert on crash
 - `crash.py` — accel-magnitude crash severity + alert cooldown
-- `templates/index.html` — dashboard page (vanilla JS polling, no build step)
+- `templates/index.html` — dashboard page (vanilla JS polling + drive pad, no build step)
 
 ## Run
 
@@ -23,7 +25,7 @@ python app.py
 
 Open `http://<host>:5000/`.
 
-## Serial ports — edit these constants before running
+## Connection settings — edit these constants before running
 
 | Module | File | Default | Notes |
 |---|---|---|---|

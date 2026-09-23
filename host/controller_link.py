@@ -1,7 +1,8 @@
 """USB-serial link to the Controller ESP32.
 
-Sends DROWSY/AWAKE, parses the MPU + LINK lines it forwards from the
-Vehicle ESP32 (see firmware/README.md for the wire protocol).
+Sends DROWSY/AWAKE and website drive commands, parses the MPU + LINK lines
+the Controller relays back from the Vehicle ESP32 over ESP-NOW.
+See firmware/README.md for the wire protocol.
 """
 import threading
 import time
@@ -18,7 +19,12 @@ class ControllerLink:
         self.latest_mpu = None      # dict: ax, ay, az, gx, gy, gz
         self.link_ok = False
         self._drowsy = False
-        self._ser = serial.Serial(port, baud, timeout=1)
+        try:
+            self._ser = serial.Serial(port, baud, timeout=1)
+        except serial.SerialException:
+            print(f"Controller: no serial port at {port}, drive/telemetry disabled")
+            self._ser = None
+            return
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
@@ -26,7 +32,12 @@ class ControllerLink:
         if drowsy == self._drowsy:
             return
         self._drowsy = drowsy
-        self._ser.write(b"DROWSY\n" if drowsy else b"AWAKE\n")
+        if self._ser:
+            self._ser.write(b"DROWSY\n" if drowsy else b"AWAKE\n")
+
+    def send_control(self, direction: str):
+        if self._ser:
+            self._ser.write(f"DIR,{direction}\n".encode())
 
     def _run(self):
         while True:

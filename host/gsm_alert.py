@@ -12,17 +12,23 @@ import serial
 GSM_SERIAL_PORT = "/dev/ttyUSB1"  # separate USB-serial adapter; Pi's one hardware
                                     # UART is already used by the GPS module
 GSM_BAUD = 9600
-ALERT_PHONE_NUMBER = "+10000000000"
+ALERT_PHONE_NUMBER = "+10000000000" # mobile number to text in case of accident, in international format (with +countrycode)
 
 
 class GsmModule:
     def __init__(self, port=GSM_SERIAL_PORT, baud=GSM_BAUD):
-        self._ser = serial.Serial(port, baud, timeout=2)
         self._lock = threading.Lock()
         self._signal_cache = None
         self._signal_cached_at = 0.0
+        try:
+            self._ser = serial.Serial(port, baud, timeout=2)
+        except serial.SerialException:
+            print(f"GSM: no serial port at {port}, GSM disabled")
+            self._ser = None
 
     def _at(self, cmd, wait=0.5):
+        if self._ser is None:
+            return ""
         with self._lock:
             self._ser.write((cmd + "\r").encode())
             time.sleep(wait)
@@ -45,6 +51,8 @@ class GsmModule:
         return value
 
     def send_sms(self, text, number=ALERT_PHONE_NUMBER):
+        if self._ser is None:
+            return
         self._at("AT+CMGF=1")  # text mode
         self._at(f'AT+CMGS="{number}"')
         with self._lock:

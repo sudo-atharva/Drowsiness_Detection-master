@@ -2,8 +2,8 @@
 
 Webcam drowsiness detection on a host (Raspberry Pi or PC) that acts as a
 kill-switch for an ESP32-controlled RC vehicle, plus a live dashboard
-(webcam feed, crash severity from an onboard MPU6050, GPS location, GSM
-alert) reachable remotely over Tailscale.
+(webcam feed, drive controls, crash severity from an onboard MPU6050, GPS
+location, GSM alert) reachable remotely over Tailscale.
 
 ## How it fits together
 
@@ -13,20 +13,24 @@ alert) reachable remotely over Tailscale.
                         v
    [Host: Raspberry Pi or PC, 1GB RAM+]
    - drowsiness detection (OpenCV Haar cascades)
-   - Flask dashboard --------------------- Tailscale ---> your phone/laptop
+   - Flask dashboard + drive pad --------- Tailscale ---> your phone/laptop
    - GPS (GPIO UART) + GSM (serial) modules
-        |  USB serial (buttons + DROWSY/AWAKE + MPU relay)
+        |  USB serial (drive commands + DROWSY/AWAKE + MPU relay)
         v
-   [Controller ESP32]  <-----  ESP-NOW  ----->  [Vehicle ESP32]
-    4 buttons (F/B/L/R)                          MPU6050 (I2C)
-                                                  2 motors (4 pins)
-                                                  status LED (D4)
+   [Controller ESP32]  <---- ESP-NOW ---->  [Vehicle ESP32]
+    4 buttons (F/B/L/R)                      MPU6050 (I2C)
+    status LED (D4)                          2 motors (4 pins)
+                                              status LED (D4)
 ```
 
-- Driver gets drowsy -> host tells the Controller ESP32 -> it tells the
-  Vehicle ESP32 over ESP-NOW -> **vehicle stops itself**, independent of
-  whatever the controller's buttons say. The vehicle is the one that
-  enforces the stop, not the controller.
+- Two ways to drive: the website's drive pad (relayed through the
+  Controller over USB) or the Controller's own 4 physical buttons —
+  whichever moved most recently wins, with the physical buttons taking
+  priority if both are active. The Vehicle has no WiFi/network of its own;
+  everything reaches it over ESP-NOW.
+- The Vehicle enforces its own kill-switch: if the drowsy flag (relayed by
+  the Controller) is set, or the ESP-NOW link goes quiet, **it stops
+  itself**, independent of what either input source last told it to do.
 - Vehicle's MPU6050 doubles as a crash sensor: a big acceleration spike gets
   logged with severity + GPS location, and can trigger an SMS via the GSM
   module.
@@ -35,21 +39,21 @@ alert) reachable remotely over Tailscale.
 
 | Path | What |
 |---|---|
-| `firmware/controller_esp32/` | Handheld RC unit firmware (buttons, USB link to host, ESP-NOW) |
-| `firmware/vehicle_esp32/` | Vehicle firmware (motors, MPU6050, kill-switch, status LED) |
-| `firmware/README.md` | Wiring, MAC pairing, wire protocol |
-| `host/` | Flask dashboard: webcam stream, drowsiness detection, GPS/GSM, crash log |
-| `host/README.md` | Serial port config, GSM alert setup, Tailscale hosting |
+| `firmware/vehicle_esp32/` | Vehicle firmware (ESP-NOW only, motors, MPU6050, kill-switch, status LED) |
+| `firmware/controller_esp32/` | Controller firmware (4 buttons, USB<->ESP-NOW bridge to host, status LED) |
+| `firmware/README.md` | Wiring, ESP-NOW pairing, wire protocol |
+| `host/` | Flask dashboard: webcam stream, drowsiness detection, drive controls, GPS/GSM, crash log |
+| `host/README.md` | Connection settings, GSM alert setup, Tailscale hosting |
 | `Drowsiness_Detection.py` | Original standalone dlib-based script (webcam window, no hardware/website) — kept as reference; `host/drowsiness.py` is the dashboard version and uses OpenCV Haar cascades instead (dlib doesn't build cleanly on a 1GB Pi) |
 | `models/` | dlib landmark model — only used by the original standalone script above, not by the dashboard |
 | `install_windows.bat` / `install_linux.sh` | One-shot setup per platform |
 
 ## Hardware needed
 
-- 2x ESP32 dev boards
+- 2x ESP32 dev boards (one on the vehicle, one as the Controller)
 - MPU6050 (on the vehicle)
 - Dual motor driver (L298N/L9110-style) + 2 DC motors
-- 4 push buttons (controller)
+- 4 push buttons (Controller)
 - USB webcam (host)
 - GPS module (NEO-6M or similar, UART) — on the host
 - GSM module (SIM800L or similar, UART) — on the host
@@ -73,16 +77,16 @@ install_windows.bat
 Both scripts install dependencies, and the Linux one also sets up Tailscale,
 frees the GPIO UART for GPS, and registers a systemd service so the
 dashboard survives reboots. See [`host/README.md`](host/README.md) for what
-to edit afterward (serial ports, GSM alert number) and the Tailscale
-hosting steps.
+to edit afterward (Controller's serial port, GSM alert number) and the
+Tailscale hosting steps.
 
-**Flash the two ESP32s** (Arduino IDE, ESP32 board package installed):
-1. Flash each board once, read its MAC from Serial Monitor.
-2. Put the Vehicle's MAC into `controller_esp32.ino`, and the Controller's
-   MAC into `vehicle_esp32.ino`.
+**Flash the two ESP32s** (Arduino IDE, ESP32 board package installed). Each
+prints its own MAC on boot, pre-formatted to paste into the other:
+1. Flash the Controller, copy its printed MAC into `vehicle_esp32.ino`'s `controllerMac[]`.
+2. Flash the Vehicle, copy its printed MAC into `controller_esp32.ino`'s `vehicleMac[]`.
 3. Re-flash both.
 
-Full pin-out and protocol details: [`firmware/README.md`](firmware/README.md).
+Full pin-out and wire protocol: [`firmware/README.md`](firmware/README.md).
 
 ## Status / known limits
 

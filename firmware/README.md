@@ -1,26 +1,30 @@
 # Drowsy-Aware RC Vehicle — ESP32 Firmware
 
-Two ESP32 boards, linked over ESP-NOW, plus a host (Raspberry Pi or PC) doing
-webcam-based drowsiness detection.
+Two ESP32 boards, linked over ESP-NOW. The Controller is also the USB
+bridge to the host — the Vehicle has no WiFi/network of its own at all.
 
 ```
-[Host: webcam + drowsiness detection + website over VPN]
+[Host: webcam + drowsiness detection + dashboard, over Tailscale]
         |  USB serial (115200 baud)
         v
 [Controller ESP32]  <---- ESP-NOW ---->  [Vehicle ESP32]
- 4 buttons                                MPU6050 (I2C)
- (F/B/L/R)                                2 motors (4 direction pins)
+ 4 buttons (F/B/L/R)                      MPU6050 (I2C)
+ status LED (D4)                          2 motors (4 direction pins)
                                            status LED (D4)
 ```
 
-- **Controller ESP32** sits at the host end, wired to the host over USB.
-  It reads the 4 buttons, forwards the host's drowsy/awake state to the
-  vehicle, and relays MPU6050 telemetry (received from the vehicle) back to
-  the host over the same USB serial line.
-- **Vehicle ESP32** sits on the car. It owns the MPU6050, drives the 2
-  motors, and is the one that actually enforces the kill-switch: if the
-  drowsy flag is set, or the ESP-NOW link drops, motors are force-stopped —
-  the vehicle doesn't trust the controller to behave.
+- **Controller ESP32** sits at the host end, wired to the host over USB. It
+  reads its own 4 buttons, relays the host's drowsy/awake state onward, and
+  forwards drive commands from the website's drive pad — physical buttons
+  win over a website command if both are active at once. It relays MPU6050
+  telemetry (received from the vehicle over ESP-NOW) back to the host over
+  the same USB line.
+- **Vehicle ESP32** sits on the car. No WiFi, no router dependency — pure
+  ESP-NOW. It owns the MPU6050, drives the 2 motors, and enforces the
+  kill-switch itself: if the drowsy flag is set, or the ESP-NOW link from
+  the Controller goes quiet, motors are force-stopped. The Controller does
+  not need to be trusted or even working correctly for the vehicle to fail
+  safe.
 
 ## Files
 
@@ -36,6 +40,7 @@ webcam-based drowsiness detection.
 | Button BACKWARD | 33 (to GND, `INPUT_PULLUP`) |
 | Button LEFT | 25 (to GND, `INPUT_PULLUP`) |
 | Button RIGHT | 26 (to GND, `INPUT_PULLUP`) |
+| Status LED | 4 |
 | USB | to host (Raspberry Pi / PC), 115200 baud |
 
 ### Vehicle ESP32
@@ -53,24 +58,26 @@ the same pins later if variable speed is needed.
 
 ## ESP-NOW pairing
 
-Both sketches currently have a **placeholder MAC address** for the other
-board (`vehicleMac` / `controllerMac`). Fix before flashing:
+Both sketches print their own MAC on boot, pre-formatted to paste straight
+into the other file:
 
-1. Flash either sketch once, open Serial Monitor, add a line printing
-   `WiFi.macAddress()` in `setup()` (or use a throwaway sketch) to read each
-   board's MAC.
-2. Paste the Vehicle's MAC into `controller_esp32.ino`'s `vehicleMac[]`.
-3. Paste the Controller's MAC into `vehicle_esp32.ino`'s `controllerMac[]`.
-4. Re-flash both.
+```
+This board's MAC (paste into vehicle_esp32.ino's controllerMac[]): {0x.., 0x.., 0x.., 0x.., 0x.., 0x..}
+```
 
-Both boards must be on the same Wi-Fi channel (default channel 0 = current
-channel; fine as long as neither board also joins a Wi-Fi network on a
-different channel).
+1. Flash the Controller, open Serial Monitor, copy its printed line into
+   `vehicle_esp32.ino`'s `controllerMac[]`.
+2. Flash the Vehicle, copy its printed line into `controller_esp32.ino`'s
+   `vehicleMac[]`.
+3. Re-flash both.
+
+Neither board joins a real WiFi network, so both sit on the default ESP-NOW
+channel automatically — no channel to configure or match.
 
 ## Wire protocol
 
 **Host <-> Controller (USB serial, 115200, line-based):**
-- Host -> Controller: `DROWSY\n` / `AWAKE\n`
+- Host -> Controller: `DROWSY\n` / `AWAKE\n`, `DIR,forward\n` / `DIR,backward\n` / `DIR,left\n` / `DIR,right\n` / `DIR,stop\n`
 - Controller -> Host: `MPU,ax,ay,az,gx,gy,gz\n`, `LINK,OK\n` / `LINK,LOST\n`
 
 **Controller <-> Vehicle (ESP-NOW, raw structs):**
@@ -81,39 +88,31 @@ The two structs are duplicated (not shared via a header) since keeping two
 small structs in sync by hand across two sketches is simpler than adding a
 shared library for a 2-node link — if you change one, change the other.
 
-## Status LED (Vehicle, D4)
+## Status LED (both boards, D4)
 
 | State | Behavior |
 |---|---|
-| Link lost (no packet from controller for 2s) | Blink, 1s period |
-| Link OK, drowsy | Blink, 3s period |
-| Link OK, awake | Solid on |
+| Link lost (no packet from the other board for 2s) | Blink, 1s period |
+| Link OK | Solid on |
+
+LED only reflects ESP-NOW link state — it doesn't indicate drowsy. Drowsy
+still stops the vehicle's motors (see Safety behavior below), it just isn't
+shown on either LED.
 
 ## Safety behavior
 
 Motors stop whenever **either** condition holds, decided on the vehicle:
-- ESP-NOW link has been silent for 2+ seconds, or
+- ESP-NOW link from the Controller has been silent for 2+ seconds, or
 - The last received `drowsy` flag is 1.
 
-The controller does not need to be trusted or even functioning correctly for
-the vehicle to fail safe.
+If the host's USB link to the Controller dies, the Controller keeps
+whatever drowsy state it last had — if you want "host unreachable" to also
+imply "stop the car", that's the host's job: have it send `DROWSY` if its
+own serial write fails, or just note that a fully dead host means no one
+is monitoring anyway.
 
-## Not built yet (open items for the rest of the system)
+## The rest of the system
 
-This delivers only the two ESP32 firmwares. Still open, per the wider system
-description:
-- Host-side script that runs the drowsiness detection (existing
-  `Drowsiness_Detection.py` uses `dlib` + full-frame processing — likely too
-  heavy for a 1 GB RAM Raspberry Pi; will need a lighter model/pipeline) and
-  writes `DROWSY`/`AWAKE` to the Controller's serial port, and parses the
-  `MPU,...` / `LINK,...` lines coming back.
-- The website itself (live webcam view + alert state), served from the host
-  and reached remotely over a VPN (Tailscale).
-- GPS + GSM module integration on the Raspberry Pi's GPIO/UART.
-- Deciding exactly how "host" maps to hardware: is the Raspberry Pi the one
-  running the webcam + website + Controller USB link, with a separate PC
-  just as an alternate host, or do both run simultaneously?
-
-Ask before building these so pin/protocol choices match your actual GPIO
-budget on the Pi (GPS+GSM will also want UART/GPIO pins, so worth mapping
-all of it out together rather than piecemeal).
+Host-side dashboard (drowsiness detection, drive controls, GPS/GSM,
+Tailscale hosting) lives in [`../host/`](../host/README.md). Top-level
+overview: [`../readme.md`](../readme.md).

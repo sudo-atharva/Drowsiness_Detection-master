@@ -1,14 +1,19 @@
-// Vehicle ESP32 (onboard the car/rover)
-// - MPU6050 over I2C, read locally, streamed to Controller ESP32 via ESP-NOW
-// - Drives 2 DC motors (4 direction pins total) from button commands received via ESP-NOW
-// - Status LED (D4): solid = connected+awake, slow blink (3s) = drowsy, fast blink (1s) = link lost
-// - Safety: motors are force-stopped whenever the link is lost OR the drowsy flag is set
+// Vehicle ESP32 (onboard the car/rover) — ESP-NOW only, no WiFi/HTTP.
+// - Receives ControlPacket{forward,backward,left,right,drowsy} from the Controller ESP32
+// - Drives 2 DC motors (4 direction pins) accordingly
+// - Reads MPU6050 over I2C, sends TelemetryPacket back to the Controller
+// - Status LED (D4): solid = linked to controller, blink (1s) = link lost
+// - Safety: motors are force-stopped whenever no packet has arrived from the
+//   Controller recently, OR the last received drowsy flag is 1. The Controller
+//   is the one relaying the host's drowsy state in this design (see
+//   controller_esp32.ino and firmware/README.md).
 
-#include <esp_now.h>
 #include <WiFi.h>
 #include <Wire.h>
+#include <esp_now.h>
+#include "esp_mac.h"
 
-// ponytail: struct layout is duplicated in controller_esp32.ino — keep both in sync by hand,
+// ponytail: struct layout duplicated in controller_esp32.ino — keep both in sync by hand,
 // a shared header is overkill for two small structs on a 2-node link.
 typedef struct {
   uint8_t forward;
@@ -23,10 +28,10 @@ typedef struct {
   float gx, gy, gz;
 } TelemetryPacket;
 
-uint8_t controllerMac[6] = {0x30, 0x76, 0xF5, 0x90, 0x99, 0xC8}; // Controller ESP32 (remote)
+uint8_t controllerMac[6] = {0x30, 0x76, 0xF5, 0x90, 0x99, 0xC8}; // Controller ESP32 (confirmed via Serial Monitor)
 
 // Motor driver pins: 2 direction pins per motor, digital full-speed only
-// (matches a plain L298N/L9110-style driver with ENA/ENB tied high; add PWM later for speed control)
+// (matches a plain L298N/L9110S-style driver with ENA/ENB tied high; add PWM later for speed control)
 #define MOTOR_L_IN1 25
 #define MOTOR_L_IN2 26
 #define MOTOR_R_IN1 27
@@ -36,10 +41,10 @@ uint8_t controllerMac[6] = {0x30, 0x76, 0xF5, 0x90, 0x99, 0xC8}; // Controller E
 const uint8_t MPU_ADDR = 0x68;
 const unsigned long TELEMETRY_INTERVAL_MS = 50;   // 20 Hz
 const unsigned long LINK_TIMEOUT_MS       = 2000;
-const unsigned long DROWSY_BLINK_MS       = 3000;
 const unsigned long LOST_BLINK_MS         = 1000;
 
 ControlPacket lastControl = {0, 0, 0, 0, 0};
+ControlPacket prevPrintedControl = {9, 9, 9, 9, 9}; // deliberately mismatched so first packet always prints
 unsigned long lastControlRx = 0;
 unsigned long lastTelemetrySend = 0;
 unsigned long lastLedToggle = 0;
@@ -67,12 +72,8 @@ void mpuRead(TelemetryPacket &t) {
   int16_t gy = (Wire.read() << 8) | Wire.read();
   int16_t gz = (Wire.read() << 8) | Wire.read();
 
-  t.ax = ax / 16384.0f;
-  t.ay = ay / 16384.0f;
-  t.az = az / 16384.0f;
-  t.gx = gx / 131.0f;
-  t.gy = gy / 131.0f;
-  t.gz = gz / 131.0f;
+  t.ax = ax / 16384.0f; t.ay = ay / 16384.0f; t.az = az / 16384.0f;
+  t.gx = gx / 131.0f;   t.gy = gy / 131.0f;   t.gz = gz / 131.0f;
 }
 
 void motorsStop() {
@@ -105,6 +106,14 @@ void onDataRecv(const esp_now_recv_info_t *info, const uint8_t *data, int len) {
   if (len != sizeof(ControlPacket)) return;
   memcpy(&lastControl, data, sizeof(lastControl));
   lastControlRx = millis();
+
+  // debug: print only when the command actually changes, not every 10Hz packet
+  if (memcmp(&lastControl, &prevPrintedControl, sizeof(ControlPacket)) != 0) {
+    prevPrintedControl = lastControl;
+    Serial.printf("CTRL,forward=%d,backward=%d,left=%d,right=%d,drowsy=%d\n",
+                  lastControl.forward, lastControl.backward,
+                  lastControl.left, lastControl.right, lastControl.drowsy);
+  }
 }
 
 void setup() {
@@ -120,7 +129,14 @@ void setup() {
   Wire.begin(); // default SDA=21, SCL=22
   mpuInit();
 
-  WiFi.mode(WIFI_STA);
+  WiFi.mode(WIFI_STA); // ESP-NOW needs the radio up, even with no AP connection
+
+  uint8_t mac[6];
+  esp_read_mac(mac, ESP_MAC_WIFI_STA); // reads eFuse directly - reliable even before any WiFi activity
+  Serial.printf("This board's MAC (paste into controller_esp32.ino's vehicleMac[]): "
+                "{0x%02X, 0x%02X, 0x%02X, 0x%02X, 0x%02X, 0x%02X}\n",
+                mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
   if (esp_now_init() != ESP_OK) {
     Serial.println("ESP-NOW init failed");
     return;
@@ -136,16 +152,10 @@ void setup() {
   }
 }
 
-void updateLed(bool linkOk, bool drowsy) {
+void updateLed(bool linkOk) {
   unsigned long now = millis();
   if (!linkOk) {
     if (now - lastLedToggle >= LOST_BLINK_MS) {
-      lastLedToggle = now;
-      ledState = !ledState;
-      digitalWrite(STATUS_LED, ledState);
-    }
-  } else if (drowsy) {
-    if (now - lastLedToggle >= DROWSY_BLINK_MS) {
       lastLedToggle = now;
       ledState = !ledState;
       digitalWrite(STATUS_LED, ledState);
@@ -166,7 +176,7 @@ void loop() {
     motorsApply(lastControl);
   }
 
-  updateLed(linkOk, lastControl.drowsy);
+  updateLed(linkOk);
 
   if (now - lastTelemetrySend >= TELEMETRY_INTERVAL_MS) {
     lastTelemetrySend = now;
