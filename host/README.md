@@ -1,20 +1,21 @@
 # Host dashboard (Raspberry Pi / PC)
 
-Flask app: live webcam feed + drowsiness alert, on-page drive controls,
-MPU6050 crash severity, GPS location, GSM alert status. Talks to the
-Controller ESP32 over USB serial — the Controller relays everything onward
-to the Vehicle ESP32 over ESP-NOW, so this host code never talks to the
-vehicle directly (see [`../firmware/README.md`](../firmware/README.md)).
+Flask app: live webcam feed + drowsiness alert, MPU6050 crash severity, GPS
+location, GSM alert status — view/monitor only, no driving from the
+dashboard. Driving is buttons-only on the Controller ESP32 itself. Talks to
+the Controller ESP32 over USB serial — the Controller relays everything
+onward to the Vehicle ESP32 over ESP-NOW, so this host code never talks to
+the vehicle directly (see [`../firmware/README.md`](../firmware/README.md)).
 
 ## Files
 
 - `app.py` — Flask routes, wires everything together
 - `drowsiness.py` — webcam capture + Haar-cascade eye detection, background thread
-- `controller_link.py` — USB serial to the Controller ESP32: sends drive commands + drowsy state, parses MPU + LINK lines it relays back
+- `controller_link.py` — USB serial to the Controller ESP32 (auto-detects the port): sends drowsy state, parses MPU + LINK lines it relays back
 - `gps_reader.py` — NEO-6M GPS over Pi GPIO UART, parses `$GPGGA`
 - `gsm_alert.py` — SIM800L-style GSM: signal check + SMS alert on crash
 - `crash.py` — accel-magnitude crash severity + alert cooldown
-- `templates/index.html` — dashboard page (vanilla JS polling + drive pad, no build step)
+- `templates/index.html` — dashboard page (vanilla JS polling, no build step)
 
 ## Run
 
@@ -25,21 +26,13 @@ python app.py
 
 Open `http://<host>:5000/`.
 
-## Connection settings — edit these constants before running
+## Connection settings
 
 | Module | File | Default | Notes |
 |---|---|---|---|
-| Controller ESP32 | `controller_link.py` | `/dev/ttyUSB0` | USB. Windows: `COM3` etc. |
-| GPS | `gps_reader.py` | `/dev/serial0` | Pi's hardware UART (GPIO14/15) |
-| GSM | `gsm_alert.py` | `/dev/ttyUSB1` | Needs its own port — see below |
-
-**GPS and GSM both want a serial port, and most 1GB-RAM Pi boards (Zero 2 W,
-3, 3A+) only expose one easy hardware UART on GPIO.** Options:
-- Put GSM on a USB-to-TTL adapter (what the default port above assumes), keep GPS on the GPIO UART.
-- Or the reverse, if your GSM breakout is more comfortable on GPIO.
-- Pi 4/400 has a second UART available via device tree overlay if you want both on GPIO.
-
-Pick one, wire it, done — not something to make configurable beyond the constant at the top of each file.
+| Controller ESP32 | `controller_link.py` | auto-detect | Scans USB devices for a CP210x/CH340/FTDI chip (what ESP32 boards use). Set `CONTROLLER_SERIAL_PORT` to force a specific port if auto-detect picks wrong or you have multiple such devices plugged in. |
+| GPS | `gps_reader.py` | `/dev/serial0` | Pi's hardware GPIO UART (GPIO14/15, RX/TX) |
+| GSM | `gsm_alert.py` | `/dev/ttyUSB1` | Plain USB (its own USB-serial adapter, or a module with native USB) — doesn't touch the Pi's GPIO at all, so it never competes with GPS for the one GPIO UART |
 
 ## GSM alert assumption
 

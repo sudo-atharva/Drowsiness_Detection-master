@@ -1,16 +1,29 @@
 """USB-serial link to the Controller ESP32.
 
-Sends DROWSY/AWAKE and website drive commands, parses the MPU + LINK lines
-the Controller relays back from the Vehicle ESP32 over ESP-NOW.
+Sends DROWSY/AWAKE, parses the MPU + LINK lines the Controller relays back
+from the Vehicle ESP32 over ESP-NOW. Driving is buttons-only on the
+Controller itself — this link carries no drive commands.
 See firmware/README.md for the wire protocol.
 """
 import threading
 import time
 
 import serial
+from serial.tools import list_ports
 
-CONTROLLER_SERIAL_PORT = "/dev/ttyUSB0"  # Windows: e.g. "COM3"
+CONTROLLER_SERIAL_PORT = None  # None = auto-detect; set to e.g. "/dev/ttyUSB0" or "COM3" to force one
 CONTROLLER_BAUD = 115200
+
+# USB-serial chip vendor IDs found on common ESP32 dev boards
+# (Silicon Labs CP210x, WCH CH340/CH9102, FTDI)
+ESP32_USB_VIDS = {0x10C4, 0x1A86, 0x0403}
+
+
+def find_esp32_port():
+    for p in list_ports.comports():
+        if p.vid in ESP32_USB_VIDS:
+            return p.device
+    return None
 
 
 class ControllerLink:
@@ -19,6 +32,15 @@ class ControllerLink:
         self.latest_mpu = None      # dict: ax, ay, az, gx, gy, gz
         self.link_ok = False
         self._drowsy = False
+
+        if port is None:
+            port = find_esp32_port()
+            if port is None:
+                print("Controller: no ESP32 USB device found, drive/telemetry disabled")
+                self._ser = None
+                return
+            print(f"Controller: auto-detected on {port}")
+
         try:
             self._ser = serial.Serial(port, baud, timeout=1)
         except serial.SerialException:
@@ -34,10 +56,6 @@ class ControllerLink:
         self._drowsy = drowsy
         if self._ser:
             self._ser.write(b"DROWSY\n" if drowsy else b"AWAKE\n")
-
-    def send_control(self, direction: str):
-        if self._ser:
-            self._ser.write(f"DIR,{direction}\n".encode())
 
     def _run(self):
         while True:

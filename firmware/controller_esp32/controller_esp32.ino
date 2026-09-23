@@ -1,14 +1,12 @@
 // Controller ESP32 — USB<->ESP-NOW bridge, plus its own 4 physical buttons.
-// - Drives the Vehicle ESP32 over ESP-NOW: direction comes from whichever moved
-//   most recently, the physical buttons or a drive command from the host's website.
-//   Physical buttons win over a stale website command if both are held/set at once.
+// - Drives the Vehicle ESP32 over ESP-NOW from its 4 physical buttons only —
+//   no website/WiFi control path, driving is buttons-only by design.
 // - Relays the host's DROWSY/AWAKE state onward to the vehicle over ESP-NOW.
 // - Relays MPU6050 telemetry (received from the vehicle over ESP-NOW) to the host over USB.
 // - Status LED (D4): solid = linked to vehicle, blink (1s) = link lost
 //
 // Host serial protocol (115200 baud, line-based):
 //   host -> controller : "DROWSY\n" | "AWAKE\n"
-//                         "DIR,forward\n" | "DIR,backward\n" | "DIR,left\n" | "DIR,right\n" | "DIR,stop\n"
 //   controller -> host : "MPU,ax,ay,az,gx,gy,gz\n"   (forwarded from vehicle)
 //                        "LINK,OK\n" | "LINK,LOST\n" (vehicle connection status)
 
@@ -44,7 +42,6 @@ const unsigned long LINK_TIMEOUT_MS  = 2000;
 const unsigned long LOST_BLINK_MS    = 1000;
 
 ControlPacket outPacket = {0, 0, 0, 0, 0};
-String hostDir = "stop";      // last direction the website asked for
 unsigned long lastSend = 0;
 unsigned long lastTelemetryRx = 0;
 unsigned long lastLedToggle = 0;
@@ -113,7 +110,6 @@ void pollHostSerial() {
       serialLine.trim();
       if (serialLine == "DROWSY") outPacket.drowsy = 1;
       else if (serialLine == "AWAKE") outPacket.drowsy = 0;
-      else if (serialLine.startsWith("DIR,")) hostDir = serialLine.substring(4);
       serialLine = "";
     } else if (c != '\r') {
       serialLine += c;
@@ -130,8 +126,6 @@ void loop() {
   bool b = digitalRead(BTN_BACKWARD) == LOW;
   bool l = digitalRead(BTN_LEFT)     == LOW;
   bool r = digitalRead(BTN_RIGHT)    == LOW;
-  bool anyButtonPressed = f || b || l || r;
-
   // debug: print on press (rising edge only, not held-down spam)
   if (f && !prevF) Serial.println("BTN,forward");
   if (b && !prevB) Serial.println("BTN,backward");
@@ -139,14 +133,7 @@ void loop() {
   if (r && !prevR) Serial.println("BTN,right");
   prevF = f; prevB = b; prevL = l; prevR = r;
 
-  if (anyButtonPressed) {
-    outPacket.forward = f; outPacket.backward = b; outPacket.left = l; outPacket.right = r;
-  } else {
-    outPacket.forward  = (hostDir == "forward")  ? 1 : 0;
-    outPacket.backward = (hostDir == "backward") ? 1 : 0;
-    outPacket.left     = (hostDir == "left")     ? 1 : 0;
-    outPacket.right    = (hostDir == "right")    ? 1 : 0;
-  }
+  outPacket.forward = f; outPacket.backward = b; outPacket.left = l; outPacket.right = r;
 
   unsigned long now = millis();
   if (now - lastSend >= SEND_INTERVAL_MS) {

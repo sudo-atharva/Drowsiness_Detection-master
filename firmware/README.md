@@ -14,11 +14,10 @@ bridge to the host — the Vehicle has no WiFi/network of its own at all.
 ```
 
 - **Controller ESP32** sits at the host end, wired to the host over USB. It
-  reads its own 4 buttons, relays the host's drowsy/awake state onward, and
-  forwards drive commands from the website's drive pad — physical buttons
-  win over a website command if both are active at once. It relays MPU6050
-  telemetry (received from the vehicle over ESP-NOW) back to the host over
-  the same USB line.
+  reads its own 4 buttons and drives the vehicle from them directly — no
+  website/WiFi control path at all. It relays the host's drowsy/awake state
+  onward, and relays MPU6050 telemetry (received from the vehicle over
+  ESP-NOW) back to the host over the same USB line.
 - **Vehicle ESP32** sits on the car. No WiFi, no router dependency — pure
   ESP-NOW. It owns the MPU6050, drives the 2 motors, and enforces the
   kill-switch itself: if the drowsy flag is set, or the ESP-NOW link from
@@ -77,7 +76,7 @@ channel automatically — no channel to configure or match.
 ## Wire protocol
 
 **Host <-> Controller (USB serial, 115200, line-based):**
-- Host -> Controller: `DROWSY\n` / `AWAKE\n`, `DIR,forward\n` / `DIR,backward\n` / `DIR,left\n` / `DIR,right\n` / `DIR,stop\n`
+- Host -> Controller: `DROWSY\n` / `AWAKE\n`
 - Controller -> Host: `MPU,ax,ay,az,gx,gy,gz\n`, `LINK,OK\n` / `LINK,LOST\n`
 
 **Controller <-> Vehicle (ESP-NOW, raw structs):**
@@ -113,6 +112,7 @@ is monitoring anyway.
 
 ## The rest of the system
 
-Host-side dashboard (drowsiness detection, drive controls, GPS/GSM,
-Tailscale hosting) lives in [`../host/`](../host/README.md). Top-level
-overview: [`../readme.md`](../readme.md).
+Host-side dashboard (drowsiness detection, GPS/GSM, Tailscale hosting; it's
+view/monitor only, no driving from it) lives in
+[`../host/`](../host/README.md). Top-level overview:
+[`../readme.md`](../readme.md).

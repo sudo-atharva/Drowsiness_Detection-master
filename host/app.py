@@ -3,7 +3,7 @@ location, GSM alert status. Host this on the Raspberry Pi, reach it over
 Tailscale the same way OctoPrint is reached — no port forwarding, just
 `tailscale up` on the Pi and browse to http://<pi-tailscale-ip>:5000.
 """
-from flask import Flask, Response, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template
 
 from controller_link import ControllerLink
 from crash import CrashMonitor
@@ -43,13 +43,6 @@ def index():
 def video_feed():
     return Response(detector.mjpeg_generator(),
                      mimetype="multipart/x-mixed-replace; boundary=frame")
-
-
-@app.route("/api/control", methods=["POST"])
-def api_control():
-    direction = (request.get_json(silent=True) or {}).get("dir", "stop")
-    vehicle.send_control(direction)
-    return jsonify(ok=True)
 
 
 @app.route("/api/status")

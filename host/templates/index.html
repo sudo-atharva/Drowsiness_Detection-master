@@ -22,15 +22,6 @@
     </div>
 
     <div class="card">
-      <h3>Drive</h3>
-      <div id="drive-pad" style="display:grid;grid-template-columns:repeat(3,3rem);gap:4px;justify-content:center;">
-        <div></div><button data-dir="forward">&#9650;</button><div></div>
-        <button data-dir="left">&#9664;</button><button data-dir="stop">&#9632;</button><button data-dir="right">&#9654;</button>
-        <div></div><button data-dir="backward">&#9660;</button><div></div>
-      </div>
-    </div>
-
-    <div class="card">
       <h3>MPU6050 (vehicle)</h3>
       <p>Vehicle link: <span id="link-state">--</span></p>
       <table id="mpu-table"></table>
@@ -100,27 +91,6 @@
     }
     setInterval(refresh, 1000);
     refresh();
-
-    function sendControl(dir) {
-      fetch('/api/control', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dir }),
-      }).catch(() => {}); // network hiccup, next press will retry
-    }
-    document.querySelectorAll('#drive-pad button').forEach(btn => {
-      const dir = btn.dataset.dir;
-      if (dir === 'stop') {
-        btn.addEventListener('click', () => sendControl('stop'));
-        return;
-      }
-      // held-button semantics: drive while pressed, stop on release
-      btn.addEventListener('mousedown', () => sendControl(dir));
-      btn.addEventListener('mouseup', () => sendControl('stop'));
-      btn.addEventListener('mouseleave', () => sendControl('stop'));
-      btn.addEventListener('touchstart', e => { e.preventDefault(); sendControl(dir); });
-      btn.addEventListener('touchend', e => { e.preventDefault(); sendControl('stop'); });
-    });
   </script>
 </body>
 </html>
