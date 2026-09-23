@@ -45,3 +45,21 @@ $RECYCLE.BIN/
 Network Trash Folder
 Temporary Items
 .apdisk
+
+# =========================
+# Python (host/)
+# =========================
+
+venv/
+__pycache__/
+*.pyc
+
+# =========================
+# Arduino (firmware/)
+# =========================
+
+build/
+*.hex
+
+# Editor
+.vscode/
