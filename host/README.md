@@ -20,8 +20,8 @@ talks to the vehicle directly (see
 - `drive_dashboard.py` — Flask routes for the drive dashboard
 - `drowsiness.py` — webcam capture + Haar-cascade eye detection, background thread
 - `controller_link.py` — USB serial to the Controller ESP32 (auto-detects the port): sends drowsy state and drive commands, parses MPU + LINK lines it relays back
-- `gps_reader.py` — NEO-6M GPS over Pi GPIO UART, parses `$GPGGA`
-- `gsm_alert.py` — SIM800L-style GSM: signal check + SMS alert on crash
+- `gps_reader.py` — NEO-6M GPS over Pi GPIO UART0, parses `$GPGGA`/`$GNGGA`; falls back to WiFi geolocation when no fix
+- `gsm_alert.py` — SIM800L-style GSM over Pi GPIO UART3: signal check + SMS alert on crash
 - `crash.py` — accel-magnitude crash severity + alert cooldown
 - `templates/index.html` — monitoring dashboard page (vanilla JS polling, no build step)
 - `templates/drive.html` — drive dashboard page (arrow keys / on-screen buttons)
@@ -46,8 +46,21 @@ Open `http://<host>:5001/`.
 | Module | File | Default | Notes |
 |---|---|---|---|
 | Controller ESP32 | `controller_link.py` | auto-detect | Scans USB devices for a CP210x/CH340/FTDI chip (what ESP32 boards use). Set `CONTROLLER_SERIAL_PORT` to force a specific port if auto-detect picks wrong or you have multiple such devices plugged in. |
-| GPS | `gps_reader.py` | `/dev/serial0` | Pi's hardware GPIO UART (GPIO14/15, RX/TX) |
-| GSM | `gsm_alert.py` | `/dev/ttyUSB1` | Plain USB (its own USB-serial adapter, or a module with native USB) — doesn't touch the Pi's GPIO at all, so it never competes with GPS for the one GPIO UART |
+| GPS | `gps_reader.py` | `/dev/serial0` | GPIO UART0: Pi TX GPIO14 (pin 8) -> GPS RX, Pi RX GPIO15 (pin 10) <- GPS TX |
+| GSM | `gsm_alert.py` | `/dev/ttyAMA3`, then `/dev/ttyAMA1` | GPIO UART3, enabled by `install_linux.sh`. Pi 4: TX GPIO4 (pin 7), RX GPIO5 (pin 29). Pi 5: TX GPIO8 (pin 24), RX GPIO9 (pin 21). Check `ls /dev/ttyAMA*` if neither opens. Pi 3/Zero have only one full UART — use a USB-serial adapter for GSM there and put its port in `GSM_SERIAL_PORTS`. |
+
+GSM power: SIM800L wants 3.7–4.2 V with ~2 A bursts — its own supply (or
+LiPo), never the Pi's 3.3 V pin; common ground with the Pi. Its TX is ~2.8 V
+logic, which the Pi reads fine.
+
+## Location: GPS first, WiFi fallback
+
+`GPSReader.snapshot()` returns the GPS fix while one arrived in the last
+10 s (`GPS_STALE_S`). Otherwise it scans nearby WiFi APs every 60 s
+(`nmcli`) and geolocates them via [beaconDB](https://beacondb.net) — free,
+no API key. Needs internet and at least 2 visible APs; accuracy is tens to
+hundreds of metres. Result carries `"source": "gps"` or `"wifi"`, shown on
+the dashboard. Crash SMS uses whichever is current.
 
 ## GSM alert assumption
 

@@ -14,7 +14,8 @@ alert) reachable remotely over Tailscale.
    [Host: Raspberry Pi or PC, 1GB RAM+]
    - drowsiness detection (OpenCV Haar cascades)
    - Flask dashboard (view/monitor only) ---- Tailscale ---> your phone/laptop
-   - GPS (Pi GPIO UART) + GSM (USB) modules
+   - GPS + GSM modules (both on Pi GPIO UARTs)
+   - WiFi geolocation fallback when GPS has no fix
         |  USB serial (DROWSY/AWAKE + MPU relay)
         v
    [Controller ESP32]  <---- ESP-NOW ---->  [Vehicle ESP32]
@@ -54,7 +55,7 @@ alert) reachable remotely over Tailscale.
 - 4 push buttons (Controller)
 - USB webcam (host)
 - GPS module (NEO-6M or similar) — on the host, via the Pi's GPIO RX/TX
-- GSM module (SIM800L or similar) — on the host, via USB
+- GSM module (SIM800L or similar) — on the host, via a second GPIO UART (Pi 4/5)
 - Raspberry Pi (1GB RAM works) or a PC, as the host
 
 ## Setup
@@ -73,7 +74,7 @@ sudo bash install_linux.sh
 install_windows.bat
 ```
 Both scripts install dependencies, and the Linux one also sets up Tailscale,
-frees the GPIO UART for GPS, and registers a systemd service so the
+frees GPIO UART0 for GPS, enables UART3 for GSM, and registers a systemd service so the
 dashboard survives reboots. The Controller ESP32's USB port is
 auto-detected — see [`host/README.md`](host/README.md) for what else to
 edit (GSM alert number) and the Tailscale hosting steps.

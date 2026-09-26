@@ -29,6 +29,22 @@ CONFIG_TXT="/boot/firmware/config.txt"
 [ -f "$CONFIG_TXT" ] || CONFIG_TXT="/boot/config.txt"
 grep -q "^dtoverlay=disable-bt" "$CONFIG_TXT" || echo "dtoverlay=disable-bt" >> "$CONFIG_TXT"
 
+echo "== Enabling second GPIO UART (UART3) for the GSM module =="
+MODEL="$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || true)"
+case "$MODEL" in
+  *"Pi 5"*) UART3_OVERLAY="uart3-pi5" ;;   # GPIO8 TX / GPIO9 RX
+  *"Pi 4"*|*"Compute Module 4"*|*"Pi 400"*) UART3_OVERLAY="uart3" ;;  # GPIO4 TX / GPIO5 RX
+  *) UART3_OVERLAY=""
+     echo "WARNING: '$MODEL' has only one full GPIO UART (GPS uses it)."
+     echo "         GSM needs a Pi 4/5 for GPIO, or a USB-serial adapter (set GSM_SERIAL_PORTS in host/gsm_alert.py)." ;;
+esac
+if [ -n "$UART3_OVERLAY" ]; then
+  grep -q "^dtoverlay=$UART3_OVERLAY" "$CONFIG_TXT" || echo "dtoverlay=$UART3_OVERLAY" >> "$CONFIG_TXT"
+fi
+
+echo "== NetworkManager CLI (WiFi scan for location fallback when GPS has no fix) =="
+command -v nmcli >/dev/null || echo "WARNING: nmcli missing - WiFi location fallback disabled (Bookworm ships it by default)."
+
 echo "== Tailscale (for remote access, same pattern as OctoPrint) =="
 if ! command -v tailscale >/dev/null; then
   curl -fsSL https://tailscale.com/install.sh | sh
@@ -56,11 +72,10 @@ systemctl enable drowsiness-dashboard.service
 cat <<EOF
 
 Done. Before it'll actually work:
-  1. Set serial ports in host/controller_link.py, host/gps_reader.py,
-     host/gsm_alert.py to match your wiring (see host/README.md).
+  1. Wire GPS to GPIO14/15 and GSM to UART3 (see host/README.md).
   2. Set ALERT_PHONE_NUMBER in host/gsm_alert.py.
   3. sudo tailscale up   (one-time auth)
-  4. sudo reboot         (applies the UART change + starts the dashboard service)
+  4. sudo reboot         (applies the UART changes + starts the dashboard service)
 
 After reboot, check status with: sudo systemctl status drowsiness-dashboard
 Dashboard at: http://<this-pi-tailscale-ip>:5000
